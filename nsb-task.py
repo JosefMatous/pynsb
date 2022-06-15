@@ -1,7 +1,7 @@
 import geompath, nsb, los
 from los import LineOfSight
 from formation import FormationKeeping
-from utilities import calculate_barycenter
+from utilities import calculate_barycenter, predict_vehicle_state
 
 import logging, sys
 import numpy as np
@@ -51,7 +51,9 @@ class NSBAlgorithm(DynamicActor):
     @Periodic(5)
     def send_references(self):
         if self.has_valid_estimates():
-            #refs = nsb.follow_the_carrot_reference(list(self.estates.values()), self.path_parameter, self.path, self.los, self.form, 15.)
+            # Update state estimates
+            for e in self.estates.values():
+                predict_vehicle_state(e)
             refs = nsb.simulated_response_reference(list(self.estates.values()), self.path_parameter, self.path, self.los, self.form)
             for i in range(len(refs)):
                 id = self.resolve_node_id(self.vehicles[i])

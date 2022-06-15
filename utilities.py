@@ -53,11 +53,11 @@ def predict_vehicle_state(estate: imcpy.EstimatedState):
     etaT = sol.y[:, -1]
 
     estate.x = etaT[0]
-    estate.y = etaT[0]
-    estate.z = etaT[0]
-    estate.phi = etaT[0]
-    estate.theta = etaT[0]
-    estate.psi = etaT[0]
+    estate.y = etaT[1]
+    estate.z = etaT[2]
+    estate.phi = etaT[3]
+    estate.theta = etaT[4]
+    estate.psi = etaT[5]
 
     estate.set_timestamp_now()
 
