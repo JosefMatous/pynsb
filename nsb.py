@@ -7,99 +7,111 @@ import numpy as np
 
 import imcpy
 
-def step(positions, path_parameter, path: GeometricPath, los: LineOfSight, form: FormationKeeping):
-    path_ref = path.getPathReference(path_parameter)
-    vel_los, param_derivative = los.step(path_ref, calculate_barycenter(positions))
-    vel_form = form.get_velocities(path_ref, positions, param_derivative)
+class NSBAlgorithm:
+    def __init__(self, path: GeometricPath, los: LineOfSight, form: FormationKeeping, lat_home, lon_home):
+        self.path = path
+        self.los = los
+        self.form = form
+        self.lat_home = lat_home
+        self.lon_home = lon_home
 
-    vel_nsb = [vel_los + v_f_i for v_f_i in vel_form]
+    def step(self, positions, path_parameter):
+        path_ref = self.path.getPathReference(path_parameter)
+        vel_los, param_derivative = self.los.step(path_ref, calculate_barycenter(positions))
+        vel_form = self.form.get_velocities(path_ref, positions, param_derivative)
 
-    return vel_nsb, param_derivative
+        vel_nsb = [vel_los + v_f_i for v_f_i in vel_form]
 
-def follow_the_carrot_reference(estates, path_parameter, path: GeometricPath, los: LineOfSight, form: FormationKeeping, T_carrot=15.):
-    positions = [np.array([e.x, e.y, e.z]) for e in estates]
-    vel_nsb, _ = step(positions, path_parameter, path, los, form)
+        return vel_nsb, param_derivative
 
-    refs = []
-    for i in range(len(vel_nsb)):
-        v_i = vel_nsb[i]
-        U = np.linalg.norm(v_i)
-        p_i = positions[i]
-        p_ref_i = p_i + T_carrot * v_i
+    def _get_relative_position(self, estate: imcpy.EstimatedState):
+        lat_v, lon_v = imcpy.coordinates.WGS84.displace(estate.lat, estate.lon, n=estate.x, e=estate.y)
+        x_v, y_v, _ = imcpy.coordinates.WGS84.displacement(self.lat_home, self.lon_home, 0., lat_v, lon_v, 0.)
+        return np.array([x_v, y_v, estate.z])
 
-        lat, lon = imcpy.coordinates.WGS84.displace(estates[i].lat, estates[i].lon, n=p_ref_i[0], e=p_ref_i[1])
-        r = imcpy.Reference()
-        r.lat = lat  # Target waypoint
-        r.lon = lon  # Target waypoint
+    def follow_the_carrot_reference(self, estates, path_parameter, T_carrot=25.):
+        positions = [self._get_relative_position(e) for e in estates]
+        vel_nsb, _ = self.step(positions, path_parameter)
 
-        # Assign z
-        dz = imcpy.DesiredZ()
-        dz.value = p_ref_i[2]
-        dz.z_units = imcpy.ZUnits.DEPTH
-        r.z = dz
+        refs = []
+        for i in range(len(vel_nsb)):
+            v_i = vel_nsb[i]
+            U = np.linalg.norm(v_i)
+            p_i = positions[i]
+            p_ref_i = p_i + T_carrot * v_i
 
-        # Assign the speed
-        ds = imcpy.DesiredSpeed()
-        ds.value = U
-        ds.speed_units = imcpy.SpeedUnits.METERS_PS
-        r.speed = ds
+            lat, lon = imcpy.coordinates.WGS84.displace(self.lat_home, self.lon_home, n=p_ref_i[0], e=p_ref_i[1])
+            r = imcpy.Reference()
+            r.lat = lat  # Target waypoint
+            r.lon = lon  # Target waypoint
 
-        # Bitwise flags (see IMC spec for explanation)
-        flags = imcpy.Reference.FlagsBits.LOCATION | imcpy.Reference.FlagsBits.SPEED | imcpy.Reference.FlagsBits.Z
-        r.flags = flags
+            # Assign z
+            dz = imcpy.DesiredZ()
+            dz.value = p_ref_i[2]
+            dz.z_units = imcpy.ZUnits.DEPTH
+            r.z = dz
 
-        refs.append(r)
-    
-    return refs
+            # Assign the speed
+            ds = imcpy.DesiredSpeed()
+            ds.value = U
+            ds.speed_units = imcpy.SpeedUnits.METERS_PS
+            r.speed = ds
 
-def simulated_response_reference(estates, path_parameter, path: GeometricPath, los: LineOfSight, form: FormationKeeping,
-                                 T_sim=2.5, L_carrot=25.):    
-    n = len(estates)
-    pos0 = [np.array([e.x, e.y, e.z]) for e in estates]
-    pos = [p.copy() for p in pos0]
-    U = np.zeros(n)
-    _nsb_forward_euler(pos, path_parameter, U, path, los, form, T_sim, int(T_sim*10))
-    U /= T_sim
+            # Bitwise flags (see IMC spec for explanation)
+            flags = imcpy.Reference.FlagsBits.LOCATION | imcpy.Reference.FlagsBits.SPEED | imcpy.Reference.FlagsBits.Z
+            r.flags = flags
 
-    refs = []
-    for i in range(n):
-        v_i = pos[i] - pos0[i]
-        v_n = v_i / np.linalg.norm(v_i)
-        p_ref_i = pos[i] + L_carrot * v_n
+            refs.append(r)
+        
+        return refs
 
-        lat, lon = imcpy.coordinates.WGS84.displace(estates[i].lat, estates[i].lon, n=p_ref_i[0], e=p_ref_i[1])
-        r = imcpy.Reference()
-        r.lat = lat  # Target waypoint
-        r.lon = lon  # Target waypoint
+    def simulated_response_reference(self, estates, path_parameter, T_sim=2.5, L_carrot=25.):    
+        n = len(estates)
+        pos0 = [self._get_relative_position(e) for e in estates]
+        pos = [p.copy() for p in pos0]
+        U = np.zeros(n)
+        self._nsb_forward_euler(pos, path_parameter, U, T_sim, int(T_sim*10))
+        U /= T_sim
 
-        # Assign z
-        dz = imcpy.DesiredZ()
-        dz.value = p_ref_i[2]
-        dz.z_units = imcpy.ZUnits.DEPTH
-        r.z = dz
+        refs = []
+        for i in range(n):
+            v_i = pos[i] - pos0[i]
+            v_n = v_i / np.linalg.norm(v_i)
+            p_ref_i = pos[i] + L_carrot * v_n
 
-        # Assign the speed
-        ds = imcpy.DesiredSpeed()
-        ds.value = U[i]
-        ds.speed_units = imcpy.SpeedUnits.METERS_PS
-        r.speed = ds
+            lat, lon = imcpy.coordinates.WGS84.displace(estates[i].lat, estates[i].lon, n=p_ref_i[0], e=p_ref_i[1])
+            r = imcpy.Reference()
+            r.lat = lat  # Target waypoint
+            r.lon = lon  # Target waypoint
 
-        # Bitwise flags (see IMC spec for explanation)
-        flags = imcpy.Reference.FlagsBits.LOCATION | imcpy.Reference.FlagsBits.SPEED | imcpy.Reference.FlagsBits.Z
-        r.flags = flags
+            # Assign z
+            dz = imcpy.DesiredZ()
+            dz.value = p_ref_i[2]
+            dz.z_units = imcpy.ZUnits.DEPTH
+            r.z = dz
 
-        refs.append(r)
-    
-    return refs
+            # Assign the speed
+            ds = imcpy.DesiredSpeed()
+            ds.value = U[i]
+            ds.speed_units = imcpy.SpeedUnits.METERS_PS
+            r.speed = ds
 
-def _nsb_forward_euler(positions, path_parameter, Ui, path: GeometricPath, los: LineOfSight, form: FormationKeeping, T, n_steps):
-    param_copy = path_parameter
-    for i in range(n_steps):
-        param_copy = _nsb_forward_euler_step(positions, param_copy, Ui, path, los, form, T / n_steps)
+            # Bitwise flags (see IMC spec for explanation)
+            flags = imcpy.Reference.FlagsBits.LOCATION | imcpy.Reference.FlagsBits.SPEED | imcpy.Reference.FlagsBits.Z
+            r.flags = flags
 
-def _nsb_forward_euler_step(positions, path_parameter, Ui, path: GeometricPath, los: LineOfSight, form: FormationKeeping, dt):
-    vel_nsb, param_derivative = step(positions, path_parameter, path, los, form)
-    for i in range(len(positions)):
-        positions[i] += vel_nsb[i] * dt
-        Ui[i] += np.linalg.norm(vel_nsb[i]) * dt
-    return path_parameter + param_derivative * dt
+            refs.append(r)
+        
+        return refs
+
+    def _nsb_forward_euler(self, positions, path_parameter, Ui, T, n_steps):
+        param_copy = path_parameter
+        for i in range(n_steps):
+            param_copy = self._nsb_forward_euler_step(positions, param_copy, Ui,  T / n_steps)
+
+    def _nsb_forward_euler_step(self, positions, path_parameter, Ui,dt):
+        vel_nsb, param_derivative = self.step(positions, path_parameter)
+        for i in range(len(positions)):
+            positions[i] += vel_nsb[i] * dt
+            Ui[i] += np.linalg.norm(vel_nsb[i]) * dt
+        return path_parameter + param_derivative * dt

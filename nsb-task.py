@@ -1,7 +1,8 @@
-import geompath, nsb, los
+import geompath
 from los import LineOfSight
 from formation import FormationKeeping
 from utilities import calculate_barycenter, predict_vehicle_state
+from nsb import NSBAlgorithm
 
 import logging, sys
 import numpy as np
@@ -10,8 +11,8 @@ import imcpy
 from imcpy.actors import DynamicActor
 from imcpy.decorators import Subscribe, Periodic
 
-class NSBAlgorithm(DynamicActor):
-    def __init__(self, vehicles, path, los, form):
+class NSBTask(DynamicActor):
+    def __init__(self, vehicles, path, los, form, lat_home=0.71881387, lon_home=-0.15195186):
         super().__init__()
         self.vehicles = vehicles
         self.estates = {v : None for v in vehicles}
@@ -22,6 +23,7 @@ class NSBAlgorithm(DynamicActor):
         self.los = los
         self.form = form
         self.started = False
+        self.nsb = NSBAlgorithm(path, los, form, lat_home, lon_home)
 
     def get_source(self, msg):
         try:
@@ -54,7 +56,7 @@ class NSBAlgorithm(DynamicActor):
             # Update state estimates
             for e in self.estates.values():
                 predict_vehicle_state(e)
-            refs = nsb.simulated_response_reference(list(self.estates.values()), self.path_parameter, self.path, self.los, self.form)
+            refs = self.nsb.simulated_response_reference(list(self.estates.values()), self.path_parameter)
             for i in range(len(refs)):
                 id = self.resolve_node_id(self.vehicles[i])
                 self.send(id, refs[i])
@@ -66,5 +68,5 @@ if __name__ == '__main__':
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
     # Run actor
-    x = NSBAlgorithm(sys.argv[1:], geompath.PlanarSineWave(), LineOfSight(adaptive=True), FormationKeeping())
+    x = NSBTask(sys.argv[1:], geompath.PlanarSineWave(), LineOfSight(adaptive=True), FormationKeeping())
     x.run()
