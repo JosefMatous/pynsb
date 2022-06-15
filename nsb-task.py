@@ -77,21 +77,17 @@ class NSBTask(DynamicActor):
         if src not in self.vehicles:
             return
 
-        #logger.info('Received FollowRefState from {}'.format(src))
-
-        if self.state == TaskState.GOTO_START \
-            or self.state == TaskState.RUN_EXPERIMENT \
-            or self.state == TaskState.GOTO_STOP:
-                if msg.state == imcpy.FollowRefState.StateEnum.GOTO:
-                    # In goto maneuver
-                    if msg.proximity & imcpy.FollowRefState.ProximityBits.XY_NEAR:
-                        # Near XY
-                        self.near_target[src] = True
-                        self._handle_target_update()
-                elif msg.state in (imcpy.FollowRefState.StateEnum.LOITER, imcpy.FollowRefState.StateEnum.HOVER, imcpy.FollowRefState.StateEnum.WAIT):
-                    # Loitering/hovering/waiting
+        if self.state in (TaskState.GOTO_START, TaskState.RUN_EXPERIMENT, TaskState.GOTO_STOP):
+            if msg.state == imcpy.FollowRefState.StateEnum.GOTO:
+                # In goto maneuver
+                if msg.proximity & imcpy.FollowRefState.ProximityBits.XY_NEAR:
+                    # Near XY
                     self.near_target[src] = True
                     self._handle_target_update()
+            elif msg.state in (imcpy.FollowRefState.StateEnum.LOITER, imcpy.FollowRefState.StateEnum.HOVER, imcpy.FollowRefState.StateEnum.WAIT):
+                # Loitering/hovering/waiting
+                self.near_target[src] = True
+                self._handle_target_update()
 
     def _handle_target_update(self):
         if all(self.near_target.values()):
@@ -170,19 +166,11 @@ class NSBTask(DynamicActor):
         logger.info('Started FollowRef command')
 
     def stop_plan(self):
-        for vehicle in self.vehicles:
-            node = self.resolve_node_id(vehicle)
-            pc = imcpy.PlanControl()
-            pc.type = imcpy.PlanControl.TypeEnum.REQUEST
-            pc.op = imcpy.PlanControl.OperationEnum.STOP
-            pc.plan_id = 'follow_nsb'
-
-            self.send(node, pc)
-
-            self.state = TaskState.STOPPED
+        self._send_goto(self.lat_stop, self.lon_stop, True)
         logger.info('Stopped FollowRef command')
+        self.state = TaskState.STOPPED
 
-    def _send_goto(self, lat, lon):
+    def _send_goto(self, lat, lon, final=False):
         for i in range(len(lat)):
             node = self.resolve_node_id(self.vehicles[i])
             r = imcpy.Reference()
@@ -203,6 +191,7 @@ class NSBTask(DynamicActor):
 
             # Bitwise flags (see IMC spec for explanation)
             flags = imcpy.Reference.FlagsBits.LOCATION | imcpy.Reference.FlagsBits.SPEED | imcpy.Reference.FlagsBits.Z
+            flags = flags | imcpy.Reference.FlagsBits.MANDONE if final else flags
             r.flags = flags
             #logger.info('Sending goto to {}'.format(self.vehicles[i]))
             self.last_ref = r
@@ -219,7 +208,9 @@ class NSBTask(DynamicActor):
     def send_references(self):
         if self.timestamp_start is None:
             self.timestamp_start = time.time()
-        elif (time.time() - self.timestamp_start) >= self.T_stop:
+        t_diff = time.time() - self.timestamp_start
+        logger.info('Experiment in progress (t = {}s)'.format(t_diff))
+        if t_diff >= self.T_stop:
             self.state = TaskState.GOTO_STOP
             logger.info('Stopping experiment')
         # Update state estimates
