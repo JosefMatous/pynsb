@@ -5,7 +5,7 @@ from formation import FormationKeeping
 from utilities import calculate_barycenter, predict_vehicle_state
 from nsb import NSBAlgorithm
 
-import logging, sys, time
+import logging, sys, time, os
 import numpy as np
 
 import imcpy
@@ -25,7 +25,8 @@ class TaskState(Enum):
 
 class NSBTask(DynamicActor):
     def __init__(self, vehicles, path, los, form, lat_home=0.71881387, lon_home=-0.15195186,
-                lat_start=None, lon_start=None, lat_stop=None, lon_stop=None, T_stop=200.):
+                lat_start=None, lon_start=None, lat_stop=None, lon_stop=None, T_stop=200.,
+                log_data=False, log_directory=None):
         super().__init__()
         self.vehicles = vehicles
         self.estates = {v : None for v in vehicles}
@@ -56,6 +57,17 @@ class NSBTask(DynamicActor):
             self.lon_stop = lon_stop
         self.timestamp_start = None
         self.T_stop = T_stop
+        self.log_data = log_data
+        if log_data:
+            if log_directory is None:
+                log_directory = os.getcwd()
+            try:
+                os.makedirs(os.path.dirname(log_directory), exist_ok=True)
+                self.log_handle = open(log_directory, 'w')
+                self.log_handle.write('timestamp, path_parameter\n')
+            except:
+                logger.warn('Could not create log file.')
+                self.log_data = False
         
 
     def get_source(self, msg):
@@ -116,6 +128,8 @@ class NSBTask(DynamicActor):
             positions = [np.array([e.x, e.y, e.z]) for e in self.estates.values()]
             _, param_derivative = self.los.step(path_ref, calculate_barycenter(positions))
             self.path_parameter += param_derivative * 0.1
+            if self.log_data:
+                self.log_handle.write('{}, {}\n'.format(time.time(), self.path_parameter))
 
     @Periodic(5)
     def main_task(self):
@@ -130,6 +144,8 @@ class NSBTask(DynamicActor):
                 self.send_references()
             elif self.state == TaskState.GOTO_STOP:
                 self.send_goto_stop()
+                if self.log_data:
+                    self.log_handle.close()
 
     def send_plan(self):
         for vehicle in self.vehicles:
@@ -227,5 +243,8 @@ if __name__ == '__main__':
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
     # Run actor
-    x = NSBTask(sys.argv[1:], geompath.PlanarSineWave(p0=np.array([25.,0.,0.])), LineOfSight(adaptive=True), FormationKeeping(), T_stop=50.)
+    scirpt_dir = os.path.dirname(os.path.realpath(__file__))
+    log_dir = 'log/' + time.strftime('%Y%m%d/%H%M%S/', time.gmtime()) + 'path_parameter.csv'
+    x = NSBTask(sys.argv[1:], geompath.PlanarSineWave(p0=np.array([25.,0.,0.])), LineOfSight(adaptive=True), FormationKeeping(), T_stop=50.,
+            log_data=True, log_directory=os.path.join(scirpt_dir, log_dir))
     x.run()
