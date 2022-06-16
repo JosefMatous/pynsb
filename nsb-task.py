@@ -4,8 +4,9 @@ from los import LineOfSight
 from formation import FormationKeeping
 from utilities import calculate_barycenter, predict_vehicle_state
 from nsb import NSBAlgorithm
+from data_logger import DataLogger
 
-import logging, sys, time, os
+import logging, sys, time, os, signal
 import numpy as np
 
 import imcpy
@@ -61,14 +62,7 @@ class NSBTask(DynamicActor):
         if log_data:
             if log_directory is None:
                 log_directory = os.getcwd()
-            try:
-                os.makedirs(os.path.dirname(log_directory), exist_ok=True)
-                self.log_handle = open(log_directory, 'w')
-                self.log_handle.write('timestamp, path_parameter\n')
-            except:
-                logger.warn('Could not create log file.')
-                self.log_data = False
-        
+            self.data_logger = DataLogger(log_directory, self.nsb)       
 
     def get_source(self, msg):
         try:
@@ -129,7 +123,7 @@ class NSBTask(DynamicActor):
             _, param_derivative = self.los.step(path_ref, calculate_barycenter(positions))
             self.path_parameter += param_derivative * 0.1
             if self.log_data:
-                self.log_handle.write('{}, {}\n'.format(time.time(), self.path_parameter))
+                self.data_logger.log_path_parameter(self.path_parameter)
 
     @Periodic(5)
     def main_task(self):
@@ -145,7 +139,7 @@ class NSBTask(DynamicActor):
             elif self.state == TaskState.GOTO_STOP:
                 self.send_goto_stop()
                 if self.log_data:
-                    self.log_handle.close()
+                    self.data_logger.close()
 
     def send_plan(self):
         for vehicle in self.vehicles:
@@ -185,6 +179,7 @@ class NSBTask(DynamicActor):
         self._send_goto(self.lat_stop, self.lon_stop, True)
         logger.info('Stopped FollowRef command')
         self.state = TaskState.STOPPED
+        self.stop()
 
     def _send_goto(self, lat, lon, final=False):
         for i in range(len(lat)):
@@ -237,6 +232,11 @@ class NSBTask(DynamicActor):
             id = self.resolve_node_id(self.vehicles[i])
             self.send(id, refs[i])
 
+    def stop(self):
+        super().stop()
+        print('Stopping task')
+        if self.log_data:
+            self.data_logger.close()
 
 if __name__ == '__main__':
     # Setup logging level and console output
@@ -244,7 +244,7 @@ if __name__ == '__main__':
 
     # Run actor
     scirpt_dir = os.path.dirname(os.path.realpath(__file__))
-    log_dir = 'log/' + time.strftime('%Y%m%d/%H%M%S/', time.gmtime()) + 'path_parameter.csv'
-    x = NSBTask(sys.argv[1:], geompath.PlanarSineWave(p0=np.array([25.,0.,0.])), LineOfSight(adaptive=True), FormationKeeping(), T_stop=50.,
+    log_dir = 'log/' + time.strftime('%Y%m%d/%H%M%S/', time.gmtime())
+    x = NSBTask(sys.argv[1:], geompath.PlanarSineWave(p0=np.array([25.,0.,0.])), LineOfSight(adaptive=True), FormationKeeping(), T_stop=200.,
             log_data=True, log_directory=os.path.join(scirpt_dir, log_dir))
     x.run()
