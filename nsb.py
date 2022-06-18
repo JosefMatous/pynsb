@@ -18,11 +18,11 @@ class NSBAlgorithm:
     def step(self, positions, path_parameter):
         path_ref = self.path.getPathReference(path_parameter)
         vel_los, param_derivative = self.los.step(path_ref, calculate_barycenter(positions))
-        vel_form = self.form.get_velocities(path_ref, positions, param_derivative)
+        vel_form, z_ref = self.form.step(path_ref, positions, param_derivative)
 
         vel_nsb = [vel_los + v_f_i for v_f_i in vel_form]
 
-        return vel_nsb, param_derivative
+        return vel_nsb, param_derivative, z_ref
 
     def _get_relative_position(self, estate: imcpy.EstimatedState):
         lat_v, lon_v = imcpy.coordinates.WGS84.displace(estate.lat, estate.lon, n=estate.x, e=estate.y)
@@ -31,7 +31,7 @@ class NSBAlgorithm:
 
     def follow_the_carrot_reference(self, estates, path_parameter, T_carrot=25.):
         positions = [self._get_relative_position(e) for e in estates]
-        vel_nsb, _ = self.step(positions, path_parameter)
+        vel_nsb, _, z_ref = self.step(positions, path_parameter)
 
         refs = []
         for i in range(len(vel_nsb)):
@@ -47,7 +47,7 @@ class NSBAlgorithm:
 
             # Assign z
             dz = imcpy.DesiredZ()
-            dz.value = p_ref_i[2]
+            dz.value = z_ref[i]
             dz.z_units = imcpy.ZUnits.DEPTH
             r.z = dz
 
@@ -70,7 +70,7 @@ class NSBAlgorithm:
         pos0 = [self._get_relative_position(e) for e in estates]
         pos = [p.copy() for p in pos0]
         U = np.zeros(n)
-        self._nsb_forward_euler(pos, path_parameter, U, T_sim, int(T_sim*10))
+        z_ref = self._nsb_forward_euler(pos, path_parameter, U, T_sim, int(T_sim*10))
         U /= T_sim
 
         refs = []
@@ -86,7 +86,7 @@ class NSBAlgorithm:
 
             # Assign z
             dz = imcpy.DesiredZ()
-            dz.value = p_ref_i[2]
+            dz.value = z_ref[i]
             dz.z_units = imcpy.ZUnits.DEPTH
             r.z = dz
 
@@ -106,12 +106,14 @@ class NSBAlgorithm:
 
     def _nsb_forward_euler(self, positions, path_parameter, Ui, T, n_steps):
         param_copy = path_parameter
+        z_ref = []
         for i in range(n_steps):
-            param_copy = self._nsb_forward_euler_step(positions, param_copy, Ui,  T / n_steps)
+            param_copy, z_ref = self._nsb_forward_euler_step(positions, param_copy, Ui,  T / n_steps)
+        return z_ref
 
     def _nsb_forward_euler_step(self, positions, path_parameter, Ui,dt):
-        vel_nsb, param_derivative = self.step(positions, path_parameter)
+        vel_nsb, param_derivative, z_ref = self.step(positions, path_parameter)
         for i in range(len(positions)):
             positions[i] += vel_nsb[i] * dt
             Ui[i] += np.linalg.norm(vel_nsb[i]) * dt
-        return path_parameter + param_derivative * dt
+        return path_parameter + param_derivative * dt, z_ref

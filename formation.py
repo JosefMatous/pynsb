@@ -13,7 +13,7 @@ class FormationKeeping:
 
         self.gain = gain
 
-    def get_velocities(self, path_ref, positions, path_parameter_derivative):
+    def step(self, path_ref, positions, path_parameter_derivative):
         n = len(positions)
         assert(n <= len(self.shape))
 
@@ -24,10 +24,11 @@ class FormationKeeping:
             path_ref.curvature[0] * path_parameter_derivative, path_ref.curvature[1] * path_parameter_derivative)
         
         rotated_shape = [R.dot(x) for x in self.shape]
+        z_ref = [path_ref.position[2] + s[2] for s in rotated_shape]
         rotated_shape_derivative = [R_dot.dot(x) for x in self.shape]
 
         form_error = [positions[i] - barycenter - rotated_shape[i] for i in range(n)]
         velocities = [rotated_shape_derivative[i] - self.gain * form_error[i] for i in range(n)]
-        return velocities
+        return velocities, z_ref
 
     
