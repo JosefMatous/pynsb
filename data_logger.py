@@ -16,9 +16,21 @@ class DataLogger:
             self._write_config_header('Path', False)
             if isinstance(alg.path, geompath.PlanarSineWave):
                 self._write_config_line('Path Type', 'Planar Sine Wave')
+                self._write_config_line('Initial Point', alg.path.p0)
                 self._write_config_line('Amplitude', alg.path.amplitude)
                 self._write_config_line('Wavenumber', alg.path.wavenumber)
                 self._write_config_line('Path Yaw Angle', alg.path.yaw)
+            elif isinstance(alg.path, geompath.OscillatingEllipse):
+                self._write_config_line('Path Type', 'Oscillating Ellipse')
+                self._write_config_line('Center', alg.path.center)
+                self._write_config_line('Semimajor Axis', alg.path.a)
+                self._write_config_line('Semiminor Axis', alg.path.b)
+                self._write_config_line('Ellipse Orientation', alg.path.yaw)
+                self._write_config_line('Initial Phase', alg.path.phi0)
+                self._write_config_line('Clockwise', alg.path.clockwise)
+                self._write_config_line('Z Amplitude', alg.path.z_amplitude)
+                self._write_config_line('Z Frequency', alg.path.z_frequency)
+                self._write_config_line('Z Initial Phase', alg.path.z_phi0)
             else:
                 self._write_config_line('Path Type', 'Unknown Path Type')
 

@@ -245,6 +245,9 @@ if __name__ == '__main__':
     # Run actor
     scirpt_dir = os.path.dirname(os.path.realpath(__file__))
     log_dir = 'log/' + time.strftime('%Y%m%d/%H%M%S/', time.gmtime())
-    x = NSBTask(sys.argv[1:], geompath.PlanarSineWave(p0=np.array([25.,0.,0.])), LineOfSight(adaptive=True), FormationKeeping(), T_stop=200.,
+    # x = NSBTask(sys.argv[1:], geompath.PlanarSineWave(p0=np.array([25.,0.,0.])), LineOfSight(adaptive=True), FormationKeeping(), T_stop=75.,
+    #         log_data=True, log_directory=os.path.join(scirpt_dir, log_dir))
+    x = NSBTask(sys.argv[1:], geompath.OscillatingEllipse(center=np.array([25.,-40.,1.5]),phi0=np.pi/2,clockwise=False,a=70.,b=40.), 
+            LineOfSight(adaptive=True), FormationKeeping(), T_stop=250.,
             log_data=True, log_directory=os.path.join(scirpt_dir, log_dir))
     x.run()
