@@ -26,6 +26,6 @@ class LineOfSight:
 
         velocity = R_d.dot(R_path.dot(np.array([self.speed, 0., 0.])))
 
-        path_parameter_derivative = self.speed * (lookahead / D + self.gain * path_err[0] / np.sqrt(path_err[0]**2 + 1.))
+        path_parameter_derivative = self.speed * (lookahead / D + self.gain * path_err[0] / np.sqrt(path_err[0]**2 + 1.)) / path_ref.gradient
 
         return velocity, path_parameter_derivative
