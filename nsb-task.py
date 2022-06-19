@@ -5,8 +5,9 @@ from formation import FormationKeeping
 from utilities import calculate_barycenter, predict_vehicle_state
 from nsb import NSBAlgorithm
 from data_logger import DataLogger
+from config_loader import load_configuration
 
-import logging, sys, time, os, signal
+import logging, sys, time, os
 import numpy as np
 
 import imcpy
@@ -25,7 +26,7 @@ class TaskState(Enum):
     STOPPED = 7
 
 class NSBTask(DynamicActor):
-    def __init__(self, vehicles, path, los, form, lat_home=0.71881387, lon_home=-0.15195186,
+    def __init__(self, vehicles, nsb: NSBAlgorithm,
                 lat_start=None, lon_start=None, lat_stop=None, lon_stop=None, T_stop=200.,
                 log_data=False, log_directory=None):
         super().__init__()
@@ -34,12 +35,11 @@ class NSBTask(DynamicActor):
         self.near_target = {v : False for v in vehicles}
         for v in vehicles:
             self.heartbeat.append(v)
-        self.path = path
+        self.path = nsb.path
         self.path_parameter = 0.
-        self.los = los
-        self.form = form
+        self.los = nsb.los
         self.state = TaskState.INITIAL
-        self.nsb = NSBAlgorithm(path, los, form, lat_home, lon_home)
+        self.nsb = nsb
         if lat_start is None:
             self.lat_start = [0.7188174845559216, 0.7188162273169989, 0.7188162273169989]
         else:
@@ -242,12 +242,16 @@ if __name__ == '__main__':
     # Setup logging level and console output
     logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
+    # Read configuration file
+    config_file = None
+    if len(sys.argv) > 1:
+        config_file = sys.argv[1]
+    nsb, gen = load_configuration(config_file)
+
     # Run actor
     scirpt_dir = os.path.dirname(os.path.realpath(__file__))
     log_dir = 'log/' + time.strftime('%Y%m%d/%H%M%S/', time.gmtime())
-    # x = NSBTask(sys.argv[1:], geompath.PlanarSineWave(p0=np.array([25.,0.,0.])), LineOfSight(adaptive=True), FormationKeeping(), T_stop=75.,
-    #         log_data=True, log_directory=os.path.join(scirpt_dir, log_dir))
-    x = NSBTask(sys.argv[1:], geompath.OscillatingEllipse(center=np.array([25.,-40.,1.5]),phi0=np.pi/2,clockwise=False,a=70.,b=40.), 
-            LineOfSight(adaptive=True), FormationKeeping(), T_stop=250.,
-            log_data=True, log_directory=os.path.join(scirpt_dir, log_dir))
+    x = NSBTask(gen['vehicles'], nsb, lat_start=gen['lat_start'], lon_start=gen['lon_start'],
+            lat_stop=gen['lat_stop'], lon_stop=gen['lon_stop'], T_stop=gen['T_stop'],
+            log_data=gen['log_data'], log_directory=os.path.join(scirpt_dir, log_dir))
     x.run()
