@@ -173,6 +173,7 @@ class NSBTask(DynamicActor):
             pc.op = imcpy.PlanControl.OperationEnum.START
             pc.plan_id = 'follow_nsb'
             pc.arg = spec
+            pc.flags = imcpy.PlanControl.FlagsBits.CALIBRATE
 
             self.send(node, pc)
 
