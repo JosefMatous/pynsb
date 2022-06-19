@@ -8,15 +8,16 @@ import numpy as np
 
 _DEFAULT_CONFIG = {
     'General' : {
-        'Vehicles'            : '[lauv-xplore-1, lauv-xplore-2, lauv-xplore-3]',
-        'Home Latitude'       : '41.18500100646542',
-        'Home Longitude'      : '-8.70620026716275',
-        'Start Latitude'      : '[41.18520811, 41.18513607, 41.18513607]',
-        'Start Longitude'     : '[-8.70618835, -8.7060334 , -8.70636713]',
-        'Stop Latitude'       : '[41.18520811, 41.18513607, 41.18513607]',
-        'Stop Longitude'      : '[-8.70618835, -8.7060334 , -8.70636713]',
-        'Experiment Stop Time': '250.',
-        'Log Data'            : 'True'
+        'Vehicles'                  : '[lauv-xplore-1, lauv-xplore-2, lauv-xplore-3]',
+        'Home Latitude'             : '41.18500100646542',
+        'Home Longitude'            : '-8.70620026716275',
+        'Start Latitude'            : '[41.18520811, 41.18513607, 41.18513607]',
+        'Start Longitude'           : '[-8.70618835, -8.7060334 , -8.70636713]',
+        'Stop Latitude'             : '[41.18520811, 41.18513607, 41.18513607]',
+        'Stop Longitude'            : '[-8.70618835, -8.7060334 , -8.70636713]',
+        'Experiment Stop Time'      : '400.',
+        'Experiment Stop Parameter' : '6.05',
+        'Log Data'                  : 'True'
     },
     'Path' : {'Path Type' : 'Oscillating Ellipse'},
     'Planar Sine Wave' : {
@@ -121,6 +122,7 @@ def load_configuration(config_file=None):
         lat_stop = np.deg2rad(_str2ndarray(gen_dict['Stop Latitude']))
         lon_stop = np.deg2rad(_str2ndarray(gen_dict['Stop Longitude']))
         T_stop = float(gen_dict['Experiment Stop Time'])
+        s_stop = float(gen_dict['Experiment Stop Parameter'])
         log_data = gen_dict['Log Data'].lower() == 'true'
         general = {'vehicles': vehicles,
                 'lat_home': lat_home,
@@ -130,6 +132,7 @@ def load_configuration(config_file=None):
                 'lat_stop': lat_stop,
                 'lon_stop': lon_stop,
                 'T_stop': T_stop,
+                's_stop': s_stop,
                 'log_data': log_data}
     except:
         raise ValueError('Error while reading configuration file')

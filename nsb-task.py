@@ -27,7 +27,8 @@ class TaskState(Enum):
 
 class NSBTask(DynamicActor):
     def __init__(self, vehicles, nsb: NSBAlgorithm,
-                lat_start=None, lon_start=None, lat_stop=None, lon_stop=None, T_stop=200.,
+                lat_start=None, lon_start=None, lat_stop=None, lon_stop=None, 
+                T_stop=200., s_stop=None,
                 log_data=False, log_directory=None):
         super().__init__()
         self.vehicles = vehicles
@@ -57,7 +58,10 @@ class NSBTask(DynamicActor):
         else:
             self.lon_stop = lon_stop
         self.timestamp_start = None
-        self.T_stop = T_stop
+        self.T_stop = T_stop if T_stop is not None else np.inf
+        self.s_stop = s_stop if s_stop is not None else np.inf
+        if T_stop is None and s_stop is None:
+            raise ValueError('Both experiment stop time and stop parameter cannot be None.')
         self.log_data = log_data
         if log_data:
             if log_directory is None:
@@ -221,7 +225,7 @@ class NSBTask(DynamicActor):
             self.timestamp_start = time.time()
         t_diff = time.time() - self.timestamp_start
         logger.info('Experiment in progress (t = {}s)'.format(t_diff))
-        if t_diff >= self.T_stop:
+        if t_diff >= self.T_stop or self.path_parameter >= self.s_stop:
             self.state = TaskState.GOTO_STOP
             logger.info('Stopping experiment')
         # Update state estimates
@@ -252,6 +256,7 @@ if __name__ == '__main__':
     scirpt_dir = os.path.dirname(os.path.realpath(__file__))
     log_dir = 'log/' + time.strftime('%Y%m%d/%H%M%S/', time.gmtime())
     x = NSBTask(gen['vehicles'], nsb, lat_start=gen['lat_start'], lon_start=gen['lon_start'],
-            lat_stop=gen['lat_stop'], lon_stop=gen['lon_stop'], T_stop=gen['T_stop'],
+            lat_stop=gen['lat_stop'], lon_stop=gen['lon_stop'], 
+            T_stop=gen['T_stop'], s_stop=gen['s_stop'],
             log_data=gen['log_data'], log_directory=os.path.join(scirpt_dir, log_dir))
     x.run()
