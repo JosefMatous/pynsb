@@ -31,7 +31,7 @@ def rotation_matrix_derivative(pitch, yaw, pitch_rate, yaw_rate):
 def calculate_barycenter(positions):
     n = len(positions)
 
-    p_b = np.zeros(n)
+    p_b = np.zeros(3)
     for p in positions:
         p_b += p / n
 
