@@ -18,12 +18,10 @@ logger = logging.getLogger('nsb-task')
 
 class TaskState(Enum):
     INITIAL = 0
-    PLAN_SENT = 2
-    GOTO_START = 3
-    STARTING_EXPERIMENT = 4
-    RUN_EXPERIMENT = 5
-    GOTO_STOP = 6
-    STOPPED = 7
+    GOTO_START = 1
+    RUN_EXPERIMENT = 2
+    GOTO_STOP = 3
+    STOPPED = 4
 
 class NSBTask(DynamicActor):
     def __init__(self, vehicles, nsb: NSBAlgorithm,
@@ -34,6 +32,7 @@ class NSBTask(DynamicActor):
         self.vehicles = vehicles
         self.estates = {v : None for v in vehicles}
         self.near_target = {v : False for v in vehicles}
+        self.vehicle_states = {v : imcpy.VehicleState.OperationModeEnum.BOOT for v in vehicles}
         for v in vehicles:
             self.heartbeat.append(v)
         self.path = nsb.path
@@ -75,6 +74,35 @@ class NSBTask(DynamicActor):
         except KeyError:
             return None
 
+    @Subscribe(imcpy.Abort)
+    def abort(self, msg):
+        self.stop()
+
+    @Subscribe(imcpy.PlanControl)
+    def recv_plan_ctrl(self, msg):
+        if self.get_source(msg) not in self.vehicles:
+            return
+        if msg.plan_id not in ('follow_nsb', '') and self.state in (TaskState.GOTO_START, TaskState.RUN_EXPERIMENT, TaskState.GOTO_STOP):
+            logger.warning('Received PlanControl message with plan ID "{}"'.format(msg.plan_id))
+            self.stop()
+
+    @Subscribe(imcpy.PlanControlState)
+    def recv_plan_state(self, msg):
+        if self.get_source(msg) not in self.vehicles:
+            return
+        if msg.plan_id not in ('follow_nsb', '') and self.state in (TaskState.GOTO_START, TaskState.RUN_EXPERIMENT, TaskState.GOTO_STOP):
+            logger.warning('Vehicle is executing plan "{}"'.format(msg.plan_id))
+            self.stop()
+
+    @Subscribe(imcpy.VehicleState)
+    def recv_vehicle_state(self, msg):
+        src = self.get_source(msg)
+        if src in self.vehicles:
+            self.vehicle_states[src] = msg.op_mode  
+            if msg.op_mode == imcpy.VehicleState.OperationModeEnum.ERROR:
+                logger.error('Vehicle {} is in error mode'.format(src))
+                self.stop()
+
     @Subscribe(imcpy.EstimatedState)
     def recv_estate(self, msg):
         vehicle = self.get_source(msg)
@@ -94,7 +122,7 @@ class NSBTask(DynamicActor):
                     # Near XY
                     self.near_target[src] = True
                     self._handle_target_update()
-            elif msg.state in (imcpy.FollowRefState.StateEnum.LOITER, imcpy.FollowRefState.StateEnum.HOVER, imcpy.FollowRefState.StateEnum.WAIT):
+            elif msg.state in (imcpy.FollowRefState.StateEnum.LOITER, imcpy.FollowRefState.StateEnum.HOVER):
                 # Loitering/hovering/waiting
                 self.near_target[src] = True
                 self._handle_target_update()
@@ -108,7 +136,7 @@ class NSBTask(DynamicActor):
             elif self.state == TaskState.GOTO_STOP:
                 self.stop_plan()
             elif self.state == TaskState.RUN_EXPERIMENT:
-                logger.warn('Vehicles reached destination during experiment')
+                logger.warning('Vehicles reached destination during experiment')
                 self.send_references()
 
     def _clear_near_target(self):
@@ -134,8 +162,6 @@ class NSBTask(DynamicActor):
         if self.has_valid_estimates():
             if self.state == TaskState.INITIAL:
                 self.send_plan()
-            elif self.state == TaskState.PLAN_SENT:
-                self.state = TaskState.GOTO_START
             elif self.state == TaskState.GOTO_START:
                 self.send_goto_start()
             elif self.state == TaskState.RUN_EXPERIMENT:
@@ -146,39 +172,45 @@ class NSBTask(DynamicActor):
                     self.data_logger.close()
 
     def send_plan(self):
-        for vehicle in self.vehicles:
-            node = self.resolve_node_id(vehicle)
-            fr = imcpy.FollowReference()
-            fr.control_src = 0xFFFF  # Controllable from all IMC adresses
-            fr.control_ent = 0xFF  # Controllable from all entities
-            fr.timeout = 30.0  # Maneuver stops when time since last Reference message exceeds this value
-            fr.loiter_radius = 5.  # Default loiter radius when waypoint is reached
-            fr.altitude_interval = 0.
+        is_in_service = [self.vehicle_states[v] == imcpy.VehicleState.OperationModeEnum.SERVICE for v in self.vehicles]
+        if all(is_in_service):
+            for vehicle in self.vehicles:
+                node = self.resolve_node_id(vehicle)
+                fr = imcpy.FollowReference()
+                fr.control_src = 0xFFFF  # Controllable from all IMC adresses
+                fr.control_ent = 0xFF  # Controllable from all entities
+                fr.timeout = 30.0  # Maneuver stops when time since last Reference message exceeds this value
+                fr.loiter_radius = 5.  # Default loiter radius when waypoint is reached
+                fr.altitude_interval = 0.
 
-            # Add to PlanManeuver message
-            pman = imcpy.PlanManeuver()
-            pman.data = fr
-            pman.maneuver_id = '1'
+                # Add to PlanManeuver message
+                pman = imcpy.PlanManeuver()
+                pman.data = fr
+                pman.maneuver_id = '1'
 
-            # Add to PlanSpecification
-            spec = imcpy.PlanSpecification()
-            spec.plan_id = 'follow_nsb'
-            spec.maneuvers.append(pman)
-            spec.start_man_id = '1'
-            spec.description = 'follow references from NSB algorithm'
+                # Add to PlanSpecification
+                spec = imcpy.PlanSpecification()
+                spec.plan_id = 'follow_nsb'
+                spec.maneuvers.append(pman)
+                spec.start_man_id = '1'
+                spec.description = 'follow references from NSB algorithm'
 
-            # Start plan
-            pc = imcpy.PlanControl()
-            pc.type = imcpy.PlanControl.TypeEnum.REQUEST
-            pc.op = imcpy.PlanControl.OperationEnum.START
-            pc.plan_id = 'follow_nsb'
-            pc.arg = spec
-            pc.flags = imcpy.PlanControl.FlagsBits.CALIBRATE
+                # Start plan
+                pc = imcpy.PlanControl()
+                pc.type = imcpy.PlanControl.TypeEnum.REQUEST
+                pc.op = imcpy.PlanControl.OperationEnum.START
+                pc.plan_id = 'follow_nsb'
+                pc.arg = spec
+                pc.flags = imcpy.PlanControl.FlagsBits.CALIBRATE
 
-            self.send(node, pc)
+                self.send(node, pc)
 
-            self.state = TaskState.PLAN_SENT
+        self.state = TaskState.GOTO_START
         logger.info('Started FollowRef command')
+
+    def check_maneuver(self):
+        is_in_maneuver = [self.vehicle_states[v] == imcpy.VehicleState.OperationModeEnum.MANEUVER for v in self.vehicles]
+        return all(is_in_maneuver)
 
     def stop_plan(self):
         self._send_goto(self.lat_stop, self.lon_stop, True)
@@ -187,7 +219,10 @@ class NSBTask(DynamicActor):
         self.stop()
 
     def _send_goto(self, lat, lon, final=False):
-        for i in range(len(lat)):
+        n_vehicles = len(self.vehicles)
+        if len(lat) < n_vehicles or len(lon) < n_vehicles:
+            logger.error('Received fewer waypoints than there are vehicles')
+        for i in range(n_vehicles):
             node = self.resolve_node_id(self.vehicles[i])
             r = imcpy.Reference()
             r.lat = lat[i]  # Target waypoint
@@ -214,33 +249,42 @@ class NSBTask(DynamicActor):
             self.send(node, r)
 
     def send_goto_start(self):
-        self._send_goto(self.lat_start, self.lon_start)
-        logger.info('Going to start position')
+        if self.check_maneuver():
+            self._send_goto(self.lat_start, self.lon_start)
+            logger.info('Going to start position')
     
     def send_goto_stop(self):
-        self._send_goto(self.lat_stop, self.lon_stop)
-        logger.info('Going to stop position')
+        if self.check_maneuver():
+            self._send_goto(self.lat_stop, self.lon_stop)
+            logger.info('Going to stop position')
+        else:
+            logger.warning('One or more vehicles have exited maneuver mode')
+            self.stop()
 
     def send_references(self):
-        if self.timestamp_start is None:
-            self.timestamp_start = time.time()
-        t_diff = time.time() - self.timestamp_start
-        logger.info('Experiment in progress (t = {}s)'.format(t_diff))
-        if t_diff >= self.T_stop or self.path_parameter >= self.s_stop:
-            self.state = TaskState.GOTO_STOP
-            logger.info('Stopping experiment')
-        # Update state estimates
-        for e in self.estates.values():
-            predict_vehicle_state(e)
-        refs = self.nsb.simulated_response_reference(list(self.estates.values()), self.path_parameter)
-        for i in range(len(refs)):
-            id = self.resolve_node_id(self.vehicles[i])
-            self.send(id, refs[i])
+        if self.check_maneuver():
+            if self.timestamp_start is None:
+                self.timestamp_start = time.time()
+            t_diff = time.time() - self.timestamp_start
+            logger.info('Experiment in progress (t = {}s)'.format(t_diff))
+            if t_diff >= self.T_stop or self.path_parameter >= self.s_stop:
+                self.state = TaskState.GOTO_STOP
+                logger.info('Stopping experiment')
+            # Update state estimates
+            for e in self.estates.values():
+                predict_vehicle_state(e)
+            refs = self.nsb.simulated_response_reference(list(self.estates.values()), self.path_parameter)
+            for i in range(len(refs)):
+                id = self.resolve_node_id(self.vehicles[i])
+                self.send(id, refs[i])
+        else:
+            logger.warning('One or more vehicles have exited maneuver mode')
+            self.stop()
 
     def stop(self):
         super().stop()
-        print('Stopping task')
         if self.log_data:
+            logger.info('Closing data log')
             self.data_logger.close()
 
 if __name__ == '__main__':
