@@ -47,7 +47,7 @@ class NSBAlgorithm:
 
             # Assign z
             dz = imcpy.DesiredZ()
-            dz.value = z_ref[i]
+            dz.value = z_ref[i] if z_ref[i] > 0. else 0.
             dz.z_units = imcpy.ZUnits.DEPTH
             r.z = dz
 
@@ -86,7 +86,7 @@ class NSBAlgorithm:
 
             # Assign z
             dz = imcpy.DesiredZ()
-            dz.value = z_ref[i]
+            dz.value = z_ref[i] if z_ref[i] > 0. else 0.
             dz.z_units = imcpy.ZUnits.DEPTH
             r.z = dz
 
