@@ -79,7 +79,7 @@ class NSBAlgorithm:
             v_n = v_i / np.linalg.norm(v_i)
             p_ref_i = pos[i] + L_carrot * v_n
 
-            lat, lon = imcpy.coordinates.WGS84.displace(estates[i].lat, estates[i].lon, n=p_ref_i[0], e=p_ref_i[1])
+            lat, lon = imcpy.coordinates.WGS84.displace(self.lat_home, self.lon_home, n=p_ref_i[0], e=p_ref_i[1])
             r = imcpy.Reference()
             r.lat = lat  # Target waypoint
             r.lon = lon  # Target waypoint
