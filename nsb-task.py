@@ -29,12 +29,14 @@ class NSBTask(DynamicActor):
                 T_stop=200., s_stop=None,
                 log_data=False, log_directory=None):
         super().__init__()
+        logger.info('Superclass initialized')
         self.vehicles = vehicles
         self.estates = {v : None for v in vehicles}
         self.near_target = {v : False for v in vehicles}
         self.vehicle_states = {v : imcpy.VehicleState.OperationModeEnum.BOOT for v in vehicles}
         for v in vehicles:
             self.heartbeat.append(v)
+        logger.info('Listening to heartbeat')
         self.path = nsb.path
         self.path_parameter = 0.
         self.los = nsb.los
@@ -76,6 +78,7 @@ class NSBTask(DynamicActor):
 
     @Subscribe(imcpy.Abort)
     def abort(self, msg):
+        logger.warning('Received abort')
         self.stop()
 
     @Subscribe(imcpy.PlanControl)
@@ -108,6 +111,10 @@ class NSBTask(DynamicActor):
         vehicle = self.get_source(msg)
         if vehicle in self.vehicles:
             self.estates[vehicle] = msg.clone()
+            x_off, y_off, _ = imcpy.coordinates.WGS84.displacement(msg.lat, msg.lon, 0., self.nsb.lat_home, self.nsb.lon_home, 0.)
+            self.path.center += np.array([x_off, y_off, 0.])
+            self.nsb.lat_home = msg.lat
+            self.nsb.lon_home = msg.lon
 
     @Subscribe(imcpy.FollowRefState)
     def recv_followrefstate(self, msg: imcpy.FollowRefState):
@@ -274,6 +281,7 @@ class NSBTask(DynamicActor):
             for e in self.estates.values():
                 predict_vehicle_state(e)
             refs = self.nsb.simulated_response_reference(list(self.estates.values()), self.path_parameter)
+            #refs = self.nsb.follow_the_carrot_reference(list(self.estates.values()), self.path_parameter, T_carrot=35.)
             for i in range(len(refs)):
                 id = self.resolve_node_id(self.vehicles[i])
                 self.send(id, refs[i])

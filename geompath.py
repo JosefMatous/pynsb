@@ -84,9 +84,11 @@ class OscillatingEllipse(GeometricPath):
         xn_diff = -direction*self.a*s_arg
         yn_diff = direction*self.b*c_arg
         zn_diff = self.z_amplitude*self.z_frequency*c_z_arg
+        p_diff = R_yaw.dot(np.array([xn_diff, yn_diff, zn_diff]))
         D2 = xn_diff**2 + yn_diff**2 + zn_diff**2
         path_gradient = np.sqrt(D2)
-        path_angles = np.array([-np.arcsin(zn_diff / path_gradient), self.yaw + np.arctan2(yn_diff, xn_diff)])        
+        #path_angles = np.array([-np.arcsin(zn_diff / path_gradient), self.yaw + np.arctan2(yn_diff, xn_diff)])        
+        path_angles = np.array([-np.arcsin(p_diff[2] / path_gradient), np.arctan2(p_diff[1], p_diff[0])])        
 
         xn_ddiff = -self.a*c_arg
         yn_ddiff = -self.b*s_arg

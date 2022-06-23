@@ -25,9 +25,10 @@ class NSBAlgorithm:
         return vel_nsb, param_derivative, z_ref
 
     def _get_relative_position(self, estate: imcpy.EstimatedState):
-        lat_v, lon_v = imcpy.coordinates.WGS84.displace(estate.lat, estate.lon, n=estate.x, e=estate.y)
-        x_v, y_v, _ = imcpy.coordinates.WGS84.displacement(self.lat_home, self.lon_home, 0., lat_v, lon_v, 0.)
-        return np.array([x_v, y_v, estate.z])
+        x_add, y_add, _ = imcpy.coordinates.WGS84.displacement(self.lat_home, self.lon_home, 0., estate.lat, estate.lon, 0.)
+        #lat_v, lon_v = imcpy.coordinates.WGS84.displace(estate.lat, estate.lon, n=estate.x, e=estate.y)
+        #x_v, y_v, _ = imcpy.coordinates.WGS84.displacement(self.lat_home, self.lon_home, 0., lat_v, lon_v, 0.)
+        return np.array([estate.x + x_add, estate.y + y_add, estate.z])
 
     def follow_the_carrot_reference(self, estates, path_parameter, T_carrot=25.):
         positions = [self._get_relative_position(e) for e in estates]
@@ -37,10 +38,12 @@ class NSBAlgorithm:
         for i in range(len(vel_nsb)):
             v_i = vel_nsb[i]
             U = np.linalg.norm(v_i)
-            p_i = positions[i]
-            p_ref_i = p_i + T_carrot * v_i
+            #p_i = positions[i]
+            #p_ref_i = p_i + T_carrot * v_i
+            p_ref_i = np.array([estates[i].x, estates[i].y, estates[i].z]) + T_carrot * v_i
 
-            lat, lon = imcpy.coordinates.WGS84.displace(self.lat_home, self.lon_home, n=p_ref_i[0], e=p_ref_i[1])
+            #lat, lon = imcpy.coordinates.WGS84.displace(self.lat_home, self.lon_home, n=p_ref_i[0], e=p_ref_i[1])
+            lat, lon = imcpy.coordinates.WGS84.displace(estates[i].lat, estates[i].lon, n=p_ref_i[0], e=p_ref_i[1])
             r = imcpy.Reference()
             r.lat = lat  # Target waypoint
             r.lon = lon  # Target waypoint
